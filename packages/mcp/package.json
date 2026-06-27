@@ -1,0 +1,25 @@
+{
+  "name": "@receipt/mcp",
+  "version": "0.1.0",
+  "description": "MCP server exposing Receipt's verify_last_run tool to AI agents.",
+  "type": "module",
+  "bin": {
+    "receipt-mcp": "bin/receipt-mcp.js"
+  },
+  "files": ["bin", "dist"],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "start": "node bin/receipt-mcp.js",
+    "clean": "rm -rf dist .turbo *.tsbuildinfo"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.12.0",
+    "@receipt/core": "workspace:*",
+    "zod": "^3.23.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.14.0",
+    "typescript": "^5.5.0"
+  }
+}

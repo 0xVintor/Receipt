@@ -1,0 +1,27 @@
+# Example: gate a PR on Receipt's verdict and post the receipt as a comment.
+# Drop this into a repo where an AI agent opens PRs (and the session transcript is available,
+# e.g. committed under .agent/ or uploaded as an artifact).
+name: Verify agent PR
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  receipt:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # Receipt diffs against the base
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - uses: ./.github/actions/receipt
+        with:
+          args: '--no-ai --since origin/${{ github.base_ref }}'
+          comment: 'true'
+          fail-on: 'fail'

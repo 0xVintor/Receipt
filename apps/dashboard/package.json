@@ -1,0 +1,23 @@
+{
+  "name": "@receipt/dashboard",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Local-first Receipt dashboard: browse run history from ~/.receipt/receipt.db.",
+  "scripts": {
+    "dev": "next dev -p 4317",
+    "build": "next build",
+    "start": "next start -p 4317",
+    "clean": "rm -rf .next .turbo"
+  },
+  "dependencies": {
+    "next": "^14.2.5",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "devDependencies": {
+    "@types/node": "^20.14.0",
+    "@types/react": "^18.3.3",
+    "@types/react-dom": "^18.3.0",
+    "typescript": "^5.5.0"
+  }
+}

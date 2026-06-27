@@ -1,0 +1,31 @@
+{
+  "name": "receipt",
+  "version": "0.1.0",
+  "description": "Verify what an AI coding agent actually did vs. what it claimed. Zero-config, deterministic, no API key required.",
+  "type": "module",
+  "bin": {
+    "receipt": "bin/receipt.js"
+  },
+  "files": ["bin", "dist"],
+  "keywords": ["ai", "agent", "claude-code", "cursor", "verification", "cli", "receipt"],
+  "license": "MIT",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "dev": "tsx src/index.ts",
+    "test": "vitest run",
+    "clean": "rm -rf dist .turbo *.tsbuildinfo"
+  },
+  "dependencies": {
+    "@receipt/core": "workspace:*",
+    "chalk": "^5.3.0",
+    "cli-table3": "^0.6.5",
+    "commander": "^12.1.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.14.0",
+    "tsx": "^4.16.0",
+    "typescript": "^5.5.0",
+    "vitest": "^2.0.0"
+  }
+}

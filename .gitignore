@@ -1,0 +1,19 @@
+node_modules/
+dist/
+.turbo/
+*.log
+*.tsbuildinfo
+.DS_Store
+
+# Receipt local data
+.receipt/
+*.sqlite
+*.db
+*.db-*
+
+# env / secrets
+.env
+.env.*
+
+# dashboard (later phase)
+apps/dashboard/.next/

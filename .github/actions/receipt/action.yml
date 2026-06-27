@@ -1,0 +1,68 @@
+name: 'Receipt'
+description: 'Verify what an AI coding agent actually did vs. what it claimed, and gate the build on the verdict.'
+author: 'Receipt'
+branding:
+  icon: 'check-circle'
+  color: 'green'
+
+inputs:
+  args:
+    description: 'Arguments passed to `receipt check` (e.g. "--no-ai --json").'
+    required: false
+    default: '--no-ai'
+  session:
+    description: 'Path to an agent transcript to verify (useful in CI where ~/.claude is absent).'
+    required: false
+    default: ''
+  working-directory:
+    description: 'Directory to run Receipt in.'
+    required: false
+    default: '.'
+  comment:
+    description: 'Post the receipt as a PR comment (requires GITHUB_TOKEN with pull-requests: write).'
+    required: false
+    default: 'false'
+  fail-on:
+    description: 'Verdict that fails the job: "fail" (default) or "warn".'
+    required: false
+    default: 'fail'
+
+outputs:
+  overall:
+    description: 'The verdict: pass | warn | fail.'
+    value: ${{ steps.run.outputs.overall }}
+
+runs:
+  using: 'composite'
+  steps:
+    - id: run
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      env:
+        GITHUB_TOKEN: ${{ github.token }}
+      run: |
+        set +e
+        SESSION_ARG=""
+        if [ -n "${{ inputs.session }}" ]; then SESSION_ARG="--session ${{ inputs.session }}"; fi
+
+        # JSON for parsing + markdown for the comment
+        JSON="$(npx --yes receipt check ${{ inputs.args }} $SESSION_ARG --json 2>/dev/null)"
+        CODE=$?
+        OVERALL="$(node -e "try{process.stdout.write(JSON.parse(process.argv[1]).overall||'pass')}catch{process.stdout.write('pass')}" "$JSON")"
+        echo "overall=$OVERALL" >> "$GITHUB_OUTPUT"
+        echo "Receipt verdict: $OVERALL"
+
+        # human-readable receipt to the job log
+        npx --yes receipt check ${{ inputs.args }} $SESSION_ARG || true
+
+        if [ "${{ inputs.comment }}" = "true" ] && [ -n "$GITHUB_TOKEN" ]; then
+          BODY="$(ls -t .receipt/receipts/*.md 2>/dev/null | head -1)"
+          if [ -n "$BODY" ] && [ -n "${{ github.event.pull_request.number }}" ]; then
+            gh pr comment "${{ github.event.pull_request.number }}" --body-file "$BODY" || true
+          fi
+        fi
+
+        if [ "${{ inputs.fail-on }}" = "warn" ]; then
+          [ "$OVERALL" = "pass" ] && exit 0 || exit 1
+        fi
+        [ "$OVERALL" = "fail" ] && exit 2 || exit 0
