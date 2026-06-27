@@ -2,6 +2,7 @@
   "name": "@receipt/mcp",
   "version": "0.1.0",
   "description": "MCP server exposing Receipt's verify_last_run tool to AI agents.",
+  "license": "MIT",
   "type": "module",
   "bin": {
     "receipt-mcp": "bin/receipt-mcp.js"
