@@ -137,6 +137,34 @@ transcript ──► claims ──► probes ──► verdict
 tests/build, which only produce the artifacts those tools always produce). Secrets are
 redacted before anything is stored.
 
+## Security & privacy
+
+Receipt is designed to run on untrusted transcripts (e.g. an agent PR in CI) without putting
+your machine or secrets at risk.
+
+- **No network by default.** With no key configured (`--no-ai`, the default) Receipt makes
+  **zero** outbound requests. The only egress points are the optional LLM call (only when you
+  configure a key) and the opt-in `endpoint` probe.
+- **Never executes commands from the transcript.** The test/build probes only ever run the
+  command **detected from your `package.json`/project config** — never a command string taken
+  from the transcript. `command_run` is verified purely from the recorded exit code; it never
+  re-executes anything. (Regression-tested in `security.test.ts`.)
+- **Secrets are redacted** before anything is written to the SQLite store or the persisted
+  markdown receipt (`API_KEY=…`, `Bearer …`, `sk-…`, AWS keys, etc.).
+- **SSRF guard.** The `endpoint` probe only hits **loopback** URLs by default; a non-local URL
+  in a claim (e.g. a cloud metadata IP) is refused unless you explicitly start a server with
+  `--start-cmd`.
+- **Read-only.** Probes never modify your source; verification re-runs your own tests/build,
+  which only produce the artifacts those tools already produce.
+- **DB access is read-only.** The `migration` probe opens SQLite read-only and quotes
+  identifiers (no SQL injection from claim text).
+- **Keys at rest** live in `~/.receipt/config.json` (chmod `0600`); `config show` masks them.
+- **What the LLM sees (only if you enable it):** your task text, the agent's final summary,
+  the tool-call list, and claim evidence are sent to your chosen provider. Stay on `--no-ai`
+  if that data shouldn't leave the machine.
+- **Published packages** contain only compiled `dist/` + `bin/` — no transcripts, fixtures,
+  `.env`, or databases.
+
 ## Supported agents
 
 - **Claude Code** — full support, verified against the real `~/.claude/projects/**/*.jsonl`

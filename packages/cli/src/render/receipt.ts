@@ -3,7 +3,7 @@
  * the headline counts, one aligned row per claim, and a verdict line.
  */
 import chalk from 'chalk';
-import type { Overall, ProbeStatus, Verdict, VerifiedClaim } from '@receipt/core';
+import { redact, type Overall, type ProbeStatus, type Verdict, type VerifiedClaim } from '@receipt/core';
 
 const ICON: Record<ProbeStatus, string> = {
   verified: '✓',
@@ -97,16 +97,19 @@ export function renderQuiet(verdict: Verdict): string {
   return `RECEIPT ${tag} · ${chalk.green(`${c.verified}✓`)} ${c.failed ? chalk.red(`${c.failed}✗`) : `${c.failed}✗`} ${c.unverifiable}? · ${verdict.summary}`;
 }
 
-/** Markdown copy saved under .receipt/receipts/ (PRD §8). */
+/**
+ * Markdown copy saved under .receipt/receipts/ (PRD §8). This file is persisted to disk (and
+ * may be committed or shared), so secrets are redacted out of every field (PRD §13).
+ */
 export function renderMarkdown(verdict: Verdict): string {
   const c = verdict.counts;
   const rows = verdict.claims
-    .map((cl: VerifiedClaim) => `| ${ICON[cl.status]} | ${md(cl.rawText)} | ${cl.status} | ${md(cl.evidence)} |`)
+    .map((cl: VerifiedClaim) => `| ${ICON[cl.status]} | ${md(redact(cl.rawText))} | ${cl.status} | ${md(redact(cl.evidence))} |`)
     .join('\n');
   return [
     `# Receipt — ${verdict.overall.toUpperCase()}`,
     '',
-    `- **Task:** ${verdict.taskText ?? '(none)'}`,
+    `- **Task:** ${md(redact(verdict.taskText ?? '(none)'))}`,
     `- **Agent:** ${verdict.agent ?? 'unknown'}`,
     `- **Claimed:** ${verdict.claims.length} · verified ${c.verified} · failed ${c.failed} · unverifiable ${c.unverifiable}`,
     verdict.durationMs ? `- **Duration:** ${formatDuration(verdict.durationMs)}` : '',

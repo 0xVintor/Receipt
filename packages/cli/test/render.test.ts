@@ -61,6 +61,25 @@ describe('renderMarkdown', () => {
     expect(md).toContain('| Claim | Status | Evidence |');
     expect(md).toContain('installed zod');
   });
+
+  it('redacts secrets in the persisted markdown (it can be committed/shared)', () => {
+    const withSecret: Verdict = {
+      ...verdict,
+      claims: [
+        {
+          id: 's',
+          type: 'command_run',
+          rawText: 'ran `curl -H "Authorization: Bearer sk-livesecret12345" api`',
+          source: 'trace',
+          status: 'verified',
+          evidence: 'exited 0',
+        },
+      ],
+    };
+    const md = renderMarkdown(withSecret);
+    expect(md).not.toContain('sk-livesecret12345');
+    expect(md).toContain('Bearer ***');
+  });
 });
 
 describe('formatDuration', () => {

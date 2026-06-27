@@ -9,11 +9,13 @@ import { runShell, isMissingTool } from './exec.js';
 
 export const testPassProbe: Probe = {
   type: 'test_pass',
-  async run(claim: Claim, ctx: ProbeContext): Promise<ProbeResult> {
+  async run(_claim: Claim, ctx: ProbeContext): Promise<ProbeResult> {
     try {
       if (ctx.opts.noTests) return ok('unverifiable', 'tests skipped (--no-tests)', 'testPass');
 
-      const cmd = chooseCommand(claim, ctx);
+      // SECURITY: only ever run the project-detected test command, never a command string
+      // pulled from the (possibly untrusted) transcript.
+      const cmd = ctx.project.testCommand;
       if (!cmd) return ok('unverifiable', 'no test runner detected for this project', 'testPass');
 
       const cacheKey = `test::${cmd}`;
@@ -39,15 +41,6 @@ export const testPassProbe: Probe = {
     }
   },
 };
-
-function chooseCommand(claim: Claim, ctx: ProbeContext): string | undefined {
-  // Prefer the project's canonical runner so identical suites are memoized to one run.
-  return ctx.project.testCommand ?? (claim.target && looksLikeTest(claim.target) ? claim.target : undefined);
-}
-
-function looksLikeTest(cmd: string): boolean {
-  return /\b(test|vitest|jest|pytest|mocha|go test|cargo test)\b/i.test(cmd);
-}
 
 function toResult(cmd: string, r: { code: number; stdout: string; stderr: string; timedOut: boolean }): ProbeResult {
   if (r.timedOut) return ok('unverifiable', `test run timed out: \`${short(cmd)}\``, 'testPass');

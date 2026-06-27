@@ -13,6 +13,13 @@ export const endpointProbe: Probe = {
       const spec = parseEndpoint(`${claim.target ?? ''} ${claim.rawText ?? ''}`);
       if (!spec.url) return ok('unverifiable', 'no URL found in claim', 'endpoint');
 
+      // SSRF guard: a claim's URL is untrusted input. By default only probe loopback hosts
+      // (the common "my dev server returns 200" case). Non-loopback hosts are only probed when
+      // the user explicitly started a server via --start-cmd.
+      if (!isLoopback(spec.url) && !ctx.opts.startCmd) {
+        return ok('unverifiable', `non-local endpoint not probed (SSRF guard): ${hostOf(spec.url)}`, 'endpoint');
+      }
+
       // If a start command is provided, bring the server up briefly.
       let serverStarted: { kill: () => void } | null = null;
       if (ctx.opts.startCmd) {
@@ -108,6 +115,27 @@ async function startServer(cmd: string, cwd: string): Promise<{ kill: () => void
       }
     },
   };
+}
+
+function hostOf(url: string): string {
+  try {
+    return new URL(url).hostname;
+  } catch {
+    return '(unparseable)';
+  }
+}
+
+/** Only loopback hosts are probed by default (SSRF guard). */
+export function isLoopback(url: string): boolean {
+  let host: string;
+  try {
+    host = new URL(url).hostname.toLowerCase().replace(/^\[|\]$/g, '');
+  } catch {
+    return false;
+  }
+  if (host === 'localhost' || host === '127.0.0.1' || host === '::1' || host === '0.0.0.0') return true;
+  if (host.startsWith('127.')) return true;
+  return false;
 }
 
 function sleep(ms: number): Promise<void> {

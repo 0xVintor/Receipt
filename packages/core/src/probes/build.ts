@@ -5,16 +5,16 @@
 import type { Claim, ProbeResult } from '../types.js';
 import { ok, type Probe, type ProbeContext } from './types.js';
 import { runShell, lastLine, isMissingTool } from './exec.js';
-import { isBuildCommand } from '../claims/rules.js';
 
 export const buildProbe: Probe = {
   type: 'build',
-  async run(claim: Claim, ctx: ProbeContext): Promise<ProbeResult> {
+  async run(_claim: Claim, ctx: ProbeContext): Promise<ProbeResult> {
     try {
       if (ctx.opts.noTests) return ok('unverifiable', 'build skipped (--no-tests)', 'build');
 
-      const cmd =
-        claim.target && isBuildCommand(claim.target) ? claim.target : ctx.project.buildCommand;
+      // SECURITY: only ever run the project-detected build command (from package.json etc.),
+      // never a command string taken from the (possibly untrusted) transcript.
+      const cmd = ctx.project.buildCommand;
       if (!cmd) return ok('unverifiable', 'no build command detected for this project', 'build');
 
       const cacheKey = `build::${cmd}`;
