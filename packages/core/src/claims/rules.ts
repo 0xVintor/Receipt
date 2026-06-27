@@ -118,6 +118,63 @@ export function canonicalPackageName(token: string): string {
   return at <= 0 ? token : token.slice(0, at);
 }
 
+// Read-only / exploratory command heads — running these is not a verifiable "action", so they
+// don't become command_run claims (this is what keeps real sessions from drowning in noise).
+const READ_ONLY_HEADS = new Set([
+  'ls', 'll', 'cat', 'bat', 'echo', 'printf', 'pwd', 'cd', 'which', 'type', 'find', 'fd', 'grep',
+  'rg', 'ag', 'ack', 'head', 'tail', 'less', 'more', 'wc', 'sort', 'uniq', 'cut', 'awk', 'tr',
+  'column', 'tree', 'stat', 'file', 'du', 'df', 'env', 'printenv', 'date', 'whoami', 'hostname',
+  'uname', 'sleep', 'true', 'false', 'test', 'jq', 'yq', 'open', 'code', 'diff', 'receipt', 'man',
+  'help', 'history', 'clear', 'realpath', 'dirname', 'basename', 'readlink', 'xxd', 'od', 'tee',
+  'curl', 'wget', 'ping', 'host', 'dig', 'nslookup', 'ps', 'top', 'kill', 'lsof', 'sed',
+]);
+const GIT_READ_SUBS = new Set([
+  'status', 'log', 'diff', 'show', 'branch', 'rev-parse', 'ls-files', 'ls-remote', 'blame',
+  'describe', 'config', 'remote', 'for-each-ref', 'cat-file', 'reflog', 'shortlog', 'rev-list',
+  'count-objects', 'tag', 'grep', 'whatchanged', 'fetch',
+]);
+const PKG_READ_SUBS = new Set(['ls', 'list', 'view', 'info', 'outdated', 'why', 'audit', 'doctor', 'config']);
+
+function headOf(seg: string): { head: string; sub: string } {
+  const toks = seg.trim().split(/\s+/);
+  let i = 0;
+  while (i < toks.length && /^[A-Za-z_][A-Za-z0-9_]*=/.test(toks[i]!)) i++; // skip VAR=val prefixes
+  let head = (toks[i] ?? '').toLowerCase();
+  // unwrap common launchers
+  while (['sudo', 'command', 'nice', 'time', 'xargs', 'env', 'npx', 'pnpm', 'bunx'].includes(head) && head === toks[i]?.toLowerCase()) {
+    // only unwrap launchers that take a following command; stop for the package-manager exec heads we handle below
+    if (head === 'npx' || head === 'pnpm' || head === 'env') break;
+    i++;
+    head = (toks[i] ?? '').toLowerCase();
+  }
+  head = head.split('/').pop() ?? head;
+  const sub = (toks[i + 1] ?? '').toLowerCase();
+  return { head, sub };
+}
+
+function isReadOnlySegment(seg: string): boolean {
+  const s = (stripLeadingCd(seg).trim() || seg.trim());
+  if (!s) return true;
+  const { head, sub } = headOf(s);
+  if (!head) return true;
+  if (head === 'git') return sub ? GIT_READ_SUBS.has(sub) : true;
+  if (['npm', 'pnpm', 'yarn', 'bun'].includes(head)) return PKG_READ_SUBS.has(sub);
+  if (['node', 'python', 'python3', 'deno', 'bun'].includes(head) && /\s-(e|p|c)\b/.test(s)) return true;
+  if ((head === 'npx' || head === 'pnpm') && /\b(eslint|tsc|prettier|biome|tsx|stylelint)\b/.test(s) && !/(--write|--fix)/.test(s)) {
+    return true; // lint/typecheck without a write flag = read-only
+  }
+  return READ_ONLY_HEADS.has(head);
+}
+
+/** True if every segment of a (possibly chained) command is read-only/exploratory. */
+export function isReadOnlyCommand(cmd: string): boolean {
+  const segs = splitSegments(cmd)
+    .map((s) => stripLeadingCd(s))
+    .filter(Boolean);
+  if (!segs.length) return true; // pure `cd …`
+  return segs.every(isReadOnlySegment);
+}
+
 export function isTestCommand(cmd: string): boolean {
   return TEST_PATTERNS.some((re) => re.test(cmd));
 }
@@ -170,6 +227,9 @@ export function claimsFromEvent(ev: RunEvent): Claim[] {
       claims.push(newClaim('build', `built: \`${oneLine(cmd)}\``, cmd));
     }
     if (!claims.length) {
+      // Skip read-only/exploratory commands — running `ls`/`grep`/`git status` isn't a
+      // verifiable action and shouldn't drag a verdict to "fail" when it exits non-zero.
+      if (isReadOnlyCommand(cmd)) return [];
       claims.push(newClaim('command_run', `ran \`${oneLine(cmd)}\``, cmd));
     }
     return claims;

@@ -29,8 +29,11 @@ export async function verifyRun(opts: RunOptions = {}): Promise<RunResult> {
   // 1) read transcript -> Run  (throws NoSessionError when nothing to verify)
   const run = await detectAndLoad(opts);
 
-  // 2) project + git context (nearest repo root from cwd; §13 monorepo/nested-git)
-  const gitInfo = await buildGitContext(cwd, opts.since);
+  // 2) project + git context (nearest repo root from cwd; §13 monorepo/nested-git).
+  // sessionSince = first event timestamp, so edits the agent COMMITTED during the session are
+  // attributed correctly (otherwise committed-and-pushed work would falsely read as unchanged).
+  const sessionSince = run.events.find((e) => e.ts)?.ts ?? run.startedAt;
+  const gitInfo = await buildGitContext(cwd, { sinceRef: opts.since, sessionSince });
   const project = detectProject(gitInfo.root);
 
   // 3) claims (rules always; AI only if available and not --no-ai)

@@ -25,6 +25,7 @@ export {
   extractInstalledPackages,
   isTestCommand,
   isBuildCommand,
+  isReadOnlyCommand,
   canonicalPackageName,
   FILE_WRITE_TOOLS,
   TEST_PATTERNS,

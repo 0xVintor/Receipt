@@ -8,6 +8,7 @@ import {
   canonicalPackageName,
   isTestCommand,
   isBuildCommand,
+  isReadOnlyCommand,
   claimsFromEvent,
   extractRuleClaims,
 } from '../src/claims/rules.js';
@@ -61,6 +62,47 @@ describe('command classification', () => {
   });
 });
 
+describe('isReadOnlyCommand (noise filter)', () => {
+  it('treats exploratory/read-only commands as read-only', () => {
+    for (const c of [
+      'ls -la',
+      'echo "=== ROOT ===" && cat package.json',
+      'grep -rn foo src',
+      'find . -name "*.tsx"',
+      'git status',
+      'git log --oneline -5',
+      'cd /x && git rev-parse HEAD',
+      'node -e "console.log(1)"',
+      'receipt check',
+      'npx eslint src',
+      'npm ls',
+      'curl -s https://example.com',
+    ]) {
+      expect(isReadOnlyCommand(c), c).toBe(true);
+    }
+  });
+
+  it('treats state-changing commands as NOT read-only', () => {
+    for (const c of [
+      'mkdir -p src',
+      'rm -f old.txt',
+      'git add -A && git commit -m x && git push',
+      'npm uninstall left-pad',
+      'mv a b',
+      'npx prettier --write src',
+    ]) {
+      expect(isReadOnlyCommand(c), c).toBe(false);
+    }
+  });
+
+  it('does not create command_run claims for read-only commands', () => {
+    const ev = { role: 'assistant' as const, toolName: 'Bash', toolInput: { command: 'echo hi && ls' } };
+    expect(claimsFromEvent(ev)).toHaveLength(0);
+    const ev2 = { role: 'assistant' as const, toolName: 'Bash', toolInput: { command: 'mkdir -p dist' } };
+    expect(claimsFromEvent(ev2).map((c) => c.type)).toEqual(['command_run']);
+  });
+});
+
 describe('claimsFromEvent', () => {
   const ev = (toolName: string, toolInput: Record<string, unknown>): RunEvent => ({
     role: 'assistant',
@@ -84,9 +126,13 @@ describe('claimsFromEvent', () => {
     expect(c.map((x) => x.type)).toEqual(['test_pass']);
   });
 
-  it('maps other bash to command_run', () => {
-    const c = claimsFromEvent(ev('Bash', { command: 'ls -la' }));
+  it('maps other (state-changing) bash to command_run', () => {
+    const c = claimsFromEvent(ev('Bash', { command: 'mkdir -p src' }));
     expect(c.map((x) => x.type)).toEqual(['command_run']);
+  });
+
+  it('filters read-only bash to no claim', () => {
+    expect(claimsFromEvent(ev('Bash', { command: 'ls -la' }))).toEqual([]);
   });
 });
 
@@ -95,8 +141,8 @@ describe('extractRuleClaims dedupe', () => {
     const events: RunEvent[] = [
       { role: 'assistant', toolName: 'Write', toolInput: { file_path: '/p/x.ts' } },
       { role: 'assistant', toolName: 'Edit', toolInput: { file_path: '/p/x.ts' } },
-      { role: 'assistant', toolName: 'Bash', toolInput: { command: 'ls' } },
-      { role: 'assistant', toolName: 'Bash', toolInput: { command: 'ls' } },
+      { role: 'assistant', toolName: 'Bash', toolInput: { command: 'mkdir -p dist' } },
+      { role: 'assistant', toolName: 'Bash', toolInput: { command: 'mkdir -p dist' } },
     ];
     const claims = extractRuleClaims(events);
     expect(claims.filter((c) => c.type === 'file_change')).toHaveLength(1);

@@ -52,6 +52,24 @@ export function commitAll(repo: string, message = 'baseline'): void {
   git(repo, ['commit', '-q', '-m', message]);
 }
 
+/** Commit with an explicit author/committer date (ISO) — for deterministic session windows. */
+export function commitAllDated(repo: string, message: string, isoDate: string): void {
+  git(repo, ['add', '-A']);
+  execFileSync('git', ['commit', '-q', '-m', message], {
+    cwd: repo,
+    encoding: 'utf8',
+    env: {
+      ...process.env,
+      GIT_AUTHOR_NAME: 'Test',
+      GIT_AUTHOR_EMAIL: 'test@example.com',
+      GIT_COMMITTER_NAME: 'Test',
+      GIT_COMMITTER_EMAIL: 'test@example.com',
+      GIT_AUTHOR_DATE: isoDate,
+      GIT_COMMITTER_DATE: isoDate,
+    },
+  });
+}
+
 // ---- synthetic transcript builder ----
 
 export interface ToolCallSpec {

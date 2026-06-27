@@ -1,9 +1,13 @@
 /**
  * Git context for probes (PRD §6.4). READ-ONLY — nothing here ever mutates the repo.
  *
- * Receipt runs *after* the agent, so the "baseline" is the repo's base ref (HEAD by default,
- * or `--since <ref>`). The agent's edits are normally uncommitted working-tree changes, so the
- * set of touched files = `git status` (working tree vs HEAD) ∪ optional `git diff <since>`.
+ * Receipt runs *after* the agent. The agent's edits may be:
+ *   1. uncommitted working-tree changes (vs HEAD), OR
+ *   2. committed (and possibly pushed) during the session.
+ * Both must count as "the edit happened". So `touched` = working-tree changes ∪ files touched
+ * by commits made within the session time window (and ∪ `git diff <--since ref>` when given).
+ *
+ * Without (2), every committed session would falsely report all edits as FAILED.
  */
 import { existsSync, realpathSync } from 'node:fs';
 import { relative, resolve, isAbsolute, sep, dirname, basename, join } from 'node:path';
@@ -25,12 +29,21 @@ function realpathSafe(p: string): string {
 export interface GitInfo {
   isRepo: boolean;
   root: string; // repo root, or cwd when not a repo
-  base: string; // 'HEAD' or the --since ref
-  touched: Set<string>; // repo-relative posix paths changed since base
+  base: string; // 'HEAD' or the --since ref (baseline for hashing uncommitted changes)
+  touched: Set<string>; // union of all changed paths (repo-relative, posix)
+  worktreeTouched: Set<string>; // uncommitted changes vs HEAD
+  committedTouched: Map<string, string>; // path -> short sha of a session/commit that touched it
   git: SimpleGit;
 }
 
-export async function buildGitContext(cwd: string, since?: string): Promise<GitInfo> {
+export interface GitWindow {
+  /** Explicit diff baseline ref (--since). */
+  sinceRef?: string;
+  /** ISO timestamp of session start: commits at/after this are attributed to the agent. */
+  sessionSince?: string;
+}
+
+export async function buildGitContext(cwd: string, window: GitWindow = {}): Promise<GitInfo> {
   const git = simpleGit({ baseDir: cwd, maxConcurrentProcesses: 1 });
   let isRepo = false;
   let root = realpathSafe(cwd);
@@ -41,43 +54,71 @@ export async function buildGitContext(cwd: string, since?: string): Promise<GitI
     isRepo = false;
   }
 
-  const base = since ?? 'HEAD';
-  const touched = new Set<string>();
+  const base = window.sinceRef ?? 'HEAD';
+  const worktreeTouched = new Set<string>();
+  const committedTouched = new Map<string, string>();
+  const rootGit = simpleGit({ baseDir: root, maxConcurrentProcesses: 1 });
 
   if (isRepo) {
-    const rootGit = simpleGit({ baseDir: root, maxConcurrentProcesses: 1 });
+    // 1) working-tree changes (uncommitted)
     try {
       const status = await rootGit.status();
-      for (const f of status.files) {
-        if (f.path) touched.add(toPosix(f.path));
-      }
+      for (const f of status.files) if (f.path) worktreeTouched.add(toPosix(f.path));
       for (const r of status.renamed) {
-        if (r.from) touched.add(toPosix(r.from));
-        if (r.to) touched.add(toPosix(r.to));
+        if (r.from) worktreeTouched.add(toPosix(r.from));
+        if (r.to) worktreeTouched.add(toPosix(r.to));
       }
     } catch {
       /* status unavailable */
     }
-    if (since) {
+
+    // 2) explicit --since ref → committed diff
+    if (window.sinceRef) {
       try {
-        const out = await rootGit.raw(['diff', '--name-only', since]);
+        const out = await rootGit.raw(['diff', '--name-only', window.sinceRef]);
         for (const line of out.split('\n')) {
           const p = line.trim();
-          if (p) touched.add(toPosix(p));
+          if (p && !committedTouched.has(toPosix(p))) committedTouched.set(toPosix(p), window.sinceRef);
         }
       } catch {
-        /* invalid ref — ignore, working-tree diff still applies */
+        /* invalid ref */
+      }
+    }
+
+    // 3) commits made DURING the session (the agent committed/pushed its work)
+    if (window.sessionSince) {
+      try {
+        const out = await rootGit.raw([
+          'log',
+          `--since=${window.sessionSince}`,
+          '--name-only',
+          '--pretty=format:%H',
+        ]);
+        let sha = '';
+        for (const raw of out.split('\n')) {
+          const line = raw.trim();
+          if (!line) continue;
+          if (/^[0-9a-f]{40}$/i.test(line)) {
+            sha = line.slice(0, 8);
+          } else {
+            const p = toPosix(line);
+            if (!committedTouched.has(p)) committedTouched.set(p, sha);
+          }
+        }
+      } catch {
+        /* log unavailable */
       }
     }
   }
 
-  return { isRepo, root, base, touched, git: simpleGit({ baseDir: root, maxConcurrentProcesses: 1 }) };
+  const touched = new Set<string>([...worktreeTouched, ...committedTouched.keys()]);
+
+  return { isRepo, root, base, touched, worktreeTouched, committedTouched, git: rootGit };
 }
 
 /** Repo-relative posix path, or null if the file is outside the repo. */
 export function repoRelative(info: GitInfo, filePath: string): string | null {
   const absRaw = isAbsolute(filePath) ? filePath : resolve(info.root, filePath);
-  // realpath both sides so symlinked roots (e.g. macOS /var -> /private/var) still match.
   const abs = realpathSafe(absRaw);
   const root = realpathSafe(info.root);
   const rel = relative(root, abs);

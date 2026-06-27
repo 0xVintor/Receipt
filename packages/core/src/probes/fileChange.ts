@@ -1,6 +1,7 @@
 /**
- * file_change probe (PRD §6.4): verified if the path changed in git since the baseline AND
- * its content hash differs; failed if unchanged/missing; unverifiable if outside the repo.
+ * file_change probe (PRD §6.4): verified if the path changed during the session — either as
+ * an uncommitted working-tree change OR in a commit the agent made during the session.
+ * Failed if unchanged/missing; unverifiable if outside the repo.
  */
 import { existsSync } from 'node:fs';
 import { isAbsolute, resolve } from 'node:path';
@@ -29,25 +30,27 @@ export const fileChangeProbe: Probe = {
         return ok('unverifiable', 'file is outside the git repo', 'fileChange');
       }
 
-      const touched = ctx.gitInfo.touched.has(rel);
-      if (touched) {
+      // 1) uncommitted working-tree change
+      if (ctx.gitInfo.worktreeTouched.has(rel)) {
         const [base, work] = await Promise.all([
           hashAtBase(ctx.gitInfo, rel),
           hashWorking(ctx.gitInfo, rel),
         ]);
-        if (base == null && !exists) {
-          return ok('verified', `deleted (tracked at ${ctx.gitInfo.base})`, 'fileChange');
-        }
-        if (base == null) return ok('verified', 'created (new file)', 'fileChange');
-        if (work == null) return ok('verified', `deleted (was ${base})`, 'fileChange');
-        if (base === work) {
-          return ok('failed', 'git lists it but content hash is unchanged', 'fileChange');
-        }
-        return ok('verified', `hash changed ${base}→${work}`, 'fileChange');
+        if (!exists) return ok('verified', 'deleted (uncommitted)', 'fileChange');
+        if (base == null) return ok('verified', 'created (uncommitted)', 'fileChange');
+        if (work && base !== work) return ok('verified', `hash changed ${base}→${work}`, 'fileChange');
+        return ok('verified', 'changed (working tree)', 'fileChange');
       }
 
-      if (!exists) return ok('failed', `file missing and no change since ${ctx.gitInfo.base}`, 'fileChange');
-      return ok('failed', `no change in git since ${ctx.gitInfo.base}`, 'fileChange');
+      // 2) committed during the session (and possibly pushed)
+      const sha = ctx.gitInfo.committedTouched.get(rel);
+      if (sha) {
+        return ok('verified', `committed in ${sha}`, 'fileChange');
+      }
+
+      // 3) no evidence the file changed
+      if (!exists) return ok('failed', 'file missing and never changed in this session', 'fileChange');
+      return ok('failed', `no change found (working tree or commits since ${ctx.gitInfo.base})`, 'fileChange');
     } catch (e) {
       return ok('unverifiable', `probe error: ${errMsg(e)}`, 'fileChange');
     }
