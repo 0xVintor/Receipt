@@ -6,8 +6,9 @@ export const dynamic = 'force-dynamic';
 
 const ICON = { verified: '✓', failed: '✗', unverifiable: '?' } as const;
 
-export default function RunPage({ params }: { params: { id: string } }) {
-  const data = getRun(params.id);
+export default async function RunPage({ params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params; // Next 15: route params are async
+  const data = getRun(id);
   if (!data) notFound();
   const { run, claims } = data;
 

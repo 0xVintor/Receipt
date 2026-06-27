@@ -91,8 +91,8 @@ committed and pushed its work, Receipt verified **50 actions, 0 false alarms**, 
 > source.
 
 ```bash
-git clone https://github.com/vsvipul11/receipt.git
-cd receipt
+git clone https://github.com/0xVintor/Receipt.git
+cd Receipt
 pnpm install
 pnpm build
 
@@ -272,6 +272,10 @@ Designed to run on untrusted transcripts (e.g. an agent PR in CI) without riskin
 - **SSRF guard** on the `endpoint` probe (loopback only unless you pass `--start-cmd`).
 - **Read‑only.** Probes never modify your source; the DB probe opens SQLite read‑only.
 - **Keys at rest** in `~/.receipt/config.json` (chmod `0600`), masked in `config show`.
+
+See **[SECURITY.md](SECURITY.md)** for the full posture, how to report a vulnerability, and the
+dependency‑audit status (currently **0 high / 0 critical**; the few remaining low/moderate advisories
+are unpatched‑upstream and confined to optional/build‑only paths).
 
 ## FAQ
 
